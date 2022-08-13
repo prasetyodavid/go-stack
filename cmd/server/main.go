@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 
 	"github.com/gin-contrib/cors"
@@ -11,11 +12,15 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/prasetyodavid/go-stack/config"
 	"github.com/prasetyodavid/go-stack/controllers"
+	"github.com/prasetyodavid/go-stack/gapi"
+	"github.com/prasetyodavid/go-stack/pb"
 	"github.com/prasetyodavid/go-stack/routes"
 	"github.com/prasetyodavid/go-stack/services"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"go.mongodb.org/mongo-driver/mongo/readpref"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
 )
 
 var (
@@ -32,10 +37,16 @@ var (
 	authService         services.AuthService
 	AuthController      controllers.AuthController
 	AuthRouteController routes.AuthRouteController
+
+	// Add the Post Service, Controllers and Routes
+	postService         services.PostService
+	PostController      controllers.PostController
+	postCollection      *mongo.Collection
+	PostRouteController routes.PostRouteController
 )
 
 func init() {
-	config, err := config.LoadConfig(".")
+	config, err := config.LoadConfig("../../config")
 	if err != nil {
 		log.Fatal("Could not load environment variables", err)
 	}
@@ -76,11 +87,17 @@ func init() {
 	authCollection = mongoclient.Database("golang_mongodb").Collection("users")
 	userService = services.NewUserServiceImpl(authCollection, ctx)
 	authService = services.NewAuthService(authCollection, ctx)
-	AuthController = controllers.NewAuthController(authService, userService)
+	AuthController = controllers.NewAuthController(authService, userService, ctx, authCollection)
 	AuthRouteController = routes.NewAuthRouteController(AuthController)
 
 	UserController = controllers.NewUserController(userService)
 	UserRouteController = routes.NewRouteUserController(UserController)
+
+	// Add the Post Service, Controllers and Routes
+	postCollection = mongoclient.Database("golang_mongodb").Collection("posts")
+	postService = services.NewPostService(postCollection, ctx)
+	PostController = controllers.NewPostController(postService)
+	PostRouteController = routes.NewPostControllerRoute(PostController)
 
 	server = gin.Default()
 }
@@ -94,6 +111,40 @@ func main() {
 
 	defer mongoclient.Disconnect(ctx)
 
+	startGinServer(config)
+	// startGrpcServer(config)
+}
+
+func startGrpcServer(config config.Config) {
+	authServer, err := gapi.NewGrpcAuthServer(config, authService, userService, authCollection)
+	if err != nil {
+		log.Fatal("cannot create grpc authServer: ", err)
+	}
+
+	userServer, err := gapi.NewGrpcUserServer(config, userService, authCollection)
+	if err != nil {
+		log.Fatal("cannot create grpc userServer: ", err)
+	}
+
+	grpcServer := grpc.NewServer()
+
+	pb.RegisterAuthServiceServer(grpcServer, authServer)
+	pb.RegisterUserServiceServer(grpcServer, userServer)
+	reflection.Register(grpcServer)
+
+	listener, err := net.Listen("tcp", config.GrpcServerAddress)
+	if err != nil {
+		log.Fatal("cannot create grpc server: ", err)
+	}
+
+	log.Printf("start gRPC server on %s", listener.Addr().String())
+	err = grpcServer.Serve(listener)
+	if err != nil {
+		log.Fatal("cannot create grpc server: ", err)
+	}
+}
+
+func startGinServer(config config.Config) {
 	value, err := redisclient.Get(ctx, "test").Result()
 
 	if err == redis.Nil {
@@ -103,7 +154,7 @@ func main() {
 	}
 
 	corsConfig := cors.DefaultConfig()
-	corsConfig.AllowOrigins = []string{"http://localhost:8000", "http://localhost:3000"}
+	corsConfig.AllowOrigins = []string{config.Origin}
 	corsConfig.AllowCredentials = true
 
 	server.Use(cors.New(corsConfig))
@@ -115,5 +166,7 @@ func main() {
 
 	AuthRouteController.AuthRoute(router, userService)
 	UserRouteController.UserRoute(router, userService)
+	// Evoke the PostRoute
+	PostRouteController.PostRoute(router)
 	log.Fatal(server.Run(":" + config.Port))
 }

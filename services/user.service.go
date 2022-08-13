@@ -3,6 +3,7 @@ package services
 import "github.com/prasetyodavid/go-stack/models"
 
 type UserService interface {
-	FindUserById(string) (*models.DBResponse, error)
-	FindUserByEmail(string) (*models.DBResponse, error)
+	FindUserById(id string) (*models.UserDBResponse, error)
+	FindUserByEmail(email string) (*models.UserDBResponse, error)
+	UpdateUserById(id string, data *models.UserUpdateInput) (*models.UserDBResponse, error)
 }
