@@ -16,6 +16,7 @@ import (
 	"github.com/prasetyodavid/go-stack/pb"
 	"github.com/prasetyodavid/go-stack/routes"
 	"github.com/prasetyodavid/go-stack/services"
+	"github.com/streadway/amqp"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"go.mongodb.org/mongo-driver/mongo/readpref"
@@ -43,10 +44,15 @@ var (
 	PostController      controllers.PostController
 	postCollection      *mongo.Collection
 	PostRouteController routes.PostRouteController
+
+	rabbitService         services.RabbitService
+	RabbitController      controllers.RabbitController
+	rabbitCollection      *mongo.Collection
+	RabbitRouteController routes.RabbitRouteController
 )
 
 func init() {
-	config, err := config.LoadConfig("../../config")
+	config, err := config.LoadConfig(".")
 	if err != nil {
 		log.Fatal("Could not load environment variables", err)
 	}
@@ -83,6 +89,13 @@ func init() {
 
 	fmt.Println("Redis client connected successfully...")
 
+	// Connect to RabbitMQ
+	conn, err := amqp.Dial(config.RabbitmqUri)
+	if err != nil {
+		panic(err)
+	}
+	defer conn.Close()
+
 	// Collections
 	authCollection = mongoclient.Database("golang_mongodb").Collection("users")
 	userService = services.NewUserServiceImpl(authCollection, ctx)
@@ -98,6 +111,12 @@ func init() {
 	postService = services.NewPostService(postCollection, ctx)
 	PostController = controllers.NewPostController(postService)
 	PostRouteController = routes.NewPostControllerRoute(PostController)
+
+	// Add the Rabbit Service, Controllers and Routes
+	rabbitCollection = mongoclient.Database("golang_mongodb").Collection("rabbits")
+	rabbitService = services.NewRabbitService(rabbitCollection, ctx)
+	RabbitController = controllers.NewRabbitController(rabbitService)
+	RabbitRouteController = routes.NewRabbitControllerRoute(RabbitController)
 
 	server = gin.Default()
 }
@@ -166,6 +185,7 @@ func startGinServer(config config.Config) {
 
 	AuthRouteController.AuthRoute(router, userService)
 	UserRouteController.UserRoute(router, userService)
+	RabbitRouteController.RabbitRoute(router)
 	// Evoke the PostRoute
 	PostRouteController.PostRoute(router)
 	log.Fatal(server.Run(":" + config.Port))

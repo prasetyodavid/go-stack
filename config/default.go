@@ -7,9 +7,10 @@ import (
 )
 
 type Config struct {
-	DBUri    string `mapstructure:"MONGODB_LOCAL_URI"`
-	RedisUri string `mapstructure:"REDIS_URL"`
-	Port     string `mapstructure:"PORT"`
+	DBUri       string `mapstructure:"MONGODB_LOCAL_URI"`
+	RedisUri    string `mapstructure:"REDIS_URL"`
+	Port        string `mapstructure:"PORT"`
+	RabbitmqUri string `mapstructure:"RABBITMQ_URL"`
 
 	GrpcServerAddress string `mapstructure:"GRPC_SERVER_ADDRESS"`
 
