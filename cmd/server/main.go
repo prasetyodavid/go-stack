@@ -52,7 +52,7 @@ var (
 )
 
 func init() {
-	config, err := config.LoadConfig(".")
+	config, err := config.LoadConfig("../../")
 	if err != nil {
 		log.Fatal("Could not load environment variables", err)
 	}
